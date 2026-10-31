@@ -33,20 +33,23 @@ export default function Cart({
       <div className="cart-layout">
         <div className="cart-items">
           {cart.map((item) => (
-            <article key={item.id} className="cart-item">
-              <img src={item.image} alt={item.name} />
+            <article key={item.cartId || `${item.id}-${item.color}-${item.size}`} className="cart-item">
+              <img src={item.image} alt={`${item.name} in ${item.color}`} />
 
               <div className="cart-item-info">
                 <h3>{item.name}</h3>
                 <p>{item.category}</p>
-                <span>Color: {item.color}</span>
+                <span>Color: {item.color} · Size: {item.size}</span>
+                <span>
+                  {Math.max(0, Number(item.variantStock ?? item.stock ?? 0) - item.quantity)} available
+                </span>
               </div>
 
               <div className="cart-item-controls">
                 <button
                   type="button"
                   className="qty-button"
-                  onClick={() => onUpdateQuantity(item.id, -1)}
+                  onClick={() => onUpdateQuantity(item.cartId || `${item.id}-${item.color}-${item.size}`, -1)}
                   aria-label={`Decrease quantity of ${item.name}`}
                 >
                   <Minus size={14} />
@@ -57,8 +60,9 @@ export default function Cart({
                 <button
                   type="button"
                   className="qty-button"
-                  onClick={() => onUpdateQuantity(item.id, 1)}
+                  onClick={() => onUpdateQuantity(item.cartId || `${item.id}-${item.color}-${item.size}`, 1)}
                   aria-label={`Increase quantity of ${item.name}`}
+                  disabled={item.quantity >= Number(item.variantStock ?? item.stock ?? 0)}
                 >
                   <Plus size={14} />
                 </button>
@@ -70,7 +74,7 @@ export default function Cart({
                 <button
                   type="button"
                   className="cart-item-remove"
-                  onClick={() => onRemoveFromCart(item.id)}
+                  onClick={() => onRemoveFromCart(item.cartId || `${item.id}-${item.color}-${item.size}`)}
                   aria-label={`Remove ${item.name} from cart`}
                 >
                   <Trash2 size={16} />

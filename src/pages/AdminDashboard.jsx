@@ -1,6 +1,7 @@
 
 import { Link } from "react-router-dom";
 import { Package, Boxes, CircleDollarSign, Plus } from "lucide-react";
+import { getVariantStock } from "../data/product";
 
 export default function AdminDashboard({ products = [], onDeleteProduct }) {
   const totalProducts = products.length;
@@ -33,12 +34,24 @@ export default function AdminDashboard({ products = [], onDeleteProduct }) {
     },
   ];
 
+  const inventoryRows = products.flatMap((product) =>
+    (product.colors || [product.color || "Default"]).flatMap((color) =>
+      (product.sizes || ["Small", "Medium", "Large"]).map((size) => ({
+        product,
+        color,
+        size,
+        stock: getVariantStock(product, color, size),
+        image: product.colorImages?.[color] || product.image,
+      }))
+    )
+  );
+
   return (
     <main className="section">
       <p className="eyebrow">STORE MANAGEMENT</p>
       <h1>Admin Dashboard</h1>
       <p className="muted">
-        Welcome to your textile business overview.
+        Your clothing store at a glance.
       </p>
 
       <div className="stats-grid">
@@ -70,22 +83,28 @@ export default function AdminDashboard({ products = [], onDeleteProduct }) {
             <thead>
               <tr>
                 <th>Product</th>
-                <th>Category</th>
-                <th>Dress Type</th>
+                <th>Department</th>
+                <th>Type</th>
                 <th>Price</th>
+                <th>Color</th>
+                <th>Size</th>
+                <th>Photo</th>
                 <th>Stock</th>
                 <th>Actions</th>
               </tr>
             </thead>
 
             <tbody>
-              {products.map((product) => (
-                <tr key={product.id}>
+              {inventoryRows.map(({ product, color, size, stock, image }) => (
+                <tr key={`${product.id}-${color}-${size}`}>
                   <td>{product.name}</td>
                   <td>{product.category}</td>
-                  <td>{product.dressType || "-"}</td>
+                  <td>{product.type || "-"}</td>
                   <td>Rs. {Number(product.price).toLocaleString()}</td>
-                  <td>{product.stock}</td>
+                  <td>{color}</td>
+                  <td>{size}</td>
+                  <td><img className="inventory-thumbnail" src={image} alt={`${product.name}, ${color}, ${size}`} /></td>
+                  <td>{stock}</td>
                   <td>
                     <button
                       type="button"

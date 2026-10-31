@@ -1,33 +1,39 @@
+import { ArrowUpRight } from "lucide-react";
+import { Link } from "react-router-dom";
 
-import { ShoppingBag } from "lucide-react";
-
-export default function ProductCard({ product, onAddToCart }) {
-  const handleAddToCart = () => {
-    if (onAddToCart) {
-      onAddToCart(product);
-    }
-  };
-
+export default function ProductCard({ product }) {
   return (
     <article className="product-card">
-      <img src={product.image} alt={product.name} />
+      <Link
+        to={`/product/${product.id}`}
+        className="product-image-link"
+        aria-label={`View ${product.name}`}
+      >
+        <img src={product.image} alt={product.name} />
+        <span className="product-category-tag">
+          {product.category === "Men" ? "MEN" : "WOMEN"}
+        </span>
+      </Link>
 
       <div className="product-info">
-        <p className="category">{product.category}</p>
-        <h3>{product.name}</h3>
-        <p className="product-color">Color: {product.color}</p>
+        <p className="category">{product.type}</p>
+        <h3>
+          <Link to={`/product/${product.id}`}>{product.name}</Link>
+        </h3>
+        <p className="product-color">
+          {product.colors?.length || 1} colors <span aria-hidden="true">·</span>{" "}
+          Small, Medium & Large
+        </p>
 
         <div className="product-bottom">
-          <strong>Rs. {product.price.toLocaleString()}</strong>
-
-          <button
-            type="button"
+          <strong>Rs. {Number(product.price).toLocaleString()}</strong>
+          <Link
+            to={`/product/${product.id}`}
             className="icon-button"
-            aria-label={`Add ${product.name} to cart`}
-            onClick={handleAddToCart}
+            aria-label={`Choose options for ${product.name}`}
           >
-            <ShoppingBag size={18} />
-          </button>
+            <ArrowUpRight size={18} />
+          </Link>
         </div>
       </div>
     </article>

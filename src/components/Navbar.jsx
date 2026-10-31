@@ -6,12 +6,14 @@ export default function Navbar({ cartCount = 0 }) {
   return (
     <header className="navbar">
       <Link to="/" className="brand">
-        THREAD<span> & </span>CO.
+        DAY<span>FORM</span>
       </Link>
 
       <nav className="nav-links">
         <NavLink to="/">Home</NavLink>
         <NavLink to="/shop">Shop</NavLink>
+        <Link to="/shop?category=Men">Men</Link>
+        <Link to="/shop?category=Women">Women</Link>
         <NavLink to="/cart">
           <ShoppingBag size={18} />
           Cart

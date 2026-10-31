@@ -1,163 +1,86 @@
-
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import ProductCard from "../components/ProductCard";
 
-const dressTypes = ["Skirt", "Pants", "Shirt"];
-const fabricOptions = ["Cotton", "Linen", "Blends"];
+const categories = ["All", "Men", "Women"];
 
-const customOrderPrices = {
-  Cotton: { Skirt: 2400, Pants: 3200, Shirt: 2200 },
-  Linen: { Skirt: 2800, Pants: 3600, Shirt: 2600 },
-  Blends: { Skirt: 2600, Pants: 3400, Shirt: 2400 },
-};
-
-export default function Shop({ onAddToCart, products = [] }) {
+export default function Shop({ products = [] }) {
   const [search, setSearch] = useState("");
-  const [fabric, setFabric] = useState("All");
-  const [dressType, setDressType] = useState("All");
-  const [customFabric, setCustomFabric] = useState("Cotton");
-  const [customDressType, setCustomDressType] = useState("Skirt");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const category = categories.includes(searchParams.get("category"))
+    ? searchParams.get("category")
+    : "All";
 
-  const fabrics = ["All", ...new Set(products.map((product) => product.category))];
+  const filteredProducts = useMemo(() => {
+    const query = search.trim().toLowerCase();
 
-  const filteredProducts = products.filter((product) => {
-    const matchesSearch =
-      product.name.toLowerCase().includes(search.toLowerCase()) ||
-      product.dressType.toLowerCase().includes(search.toLowerCase());
+    return products.filter((product) => {
+      const matchesCategory = category === "All" || product.category === category;
+      const matchesSearch =
+        !query ||
+        [product.name, product.category, product.type, product.color]
+          .filter(Boolean)
+          .some((value) => value.toLowerCase().includes(query));
 
-    const matchesFabric = fabric === "All" || product.category === fabric;
-    const matchesDressType =
-      dressType === "All" || product.dressType === dressType;
-
-    return matchesSearch && matchesFabric && matchesDressType;
-  });
-
-  const selectedTitle =
-    dressType === "All" ? "Ready to Wear" : `${dressType}s`;
-
-  const customPrice = customOrderPrices[customFabric][customDressType];
-
-  const handleCustomOrder = () => {
-    if (!onAddToCart) return;
-
-    onAddToCart({
-      id: `custom-${customFabric}-${customDressType}`,
-      name: `${customFabric} ${customDressType} - Custom Sew`,
-      category: customFabric,
-      dressType: customDressType,
-      price: customPrice,
-      stock: 1,
-      color: "Custom",
-      image:
-        "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=800",
+      return matchesCategory && matchesSearch;
     });
+  }, [category, products, search]);
+
+  const selectCategory = (nextCategory) => {
+    if (nextCategory === "All") {
+      setSearchParams({});
+    } else {
+      setSearchParams({ category: nextCategory });
+    }
   };
 
   return (
-    <main className="section">
-      <p className="eyebrow">FIND YOUR PERFECT FABRIC</p>
-      <h1>Our Collection</h1>
-
-      <div className="shop-controls">
-        <input
-          type="search"
-          placeholder="Search by fabric or dress type..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-
-        <select value={fabric} onChange={(e) => setFabric(e.target.value)}>
-          {fabrics.map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={dressType}
-          onChange={(e) => setDressType(e.target.value)}
-        >
-          <option value="All">All dress types</option>
-          {dressTypes.map((item) => (
-            <option key={item} value={item}>
-              {item}
-            </option>
-          ))}
-        </select>
+    <main className="section shop-page">
+      <div className="shop-intro">
+        <p className="eyebrow">THE EVERYDAY COLLECTION</p>
+        <h1>Find your new favorite.</h1>
+        <p>Thoughtful staples and standout pieces for every day.</p>
       </div>
 
-      <div className="custom-order-card">
-        <div>
-          <p className="eyebrow">CUSTOM SEWING</p>
-          <h2>Choose the fabric and dress type you want sewn</h2>
-        </div>
-
-        <div className="custom-order-controls">
-          <label>
-            Fabric
-            <select
-              value={customFabric}
-              onChange={(e) => setCustomFabric(e.target.value)}
+      <div className="shop-toolbar">
+        <div className="category-tabs" aria-label="Shop by category">
+          {categories.map((item) => (
+            <button
+              type="button"
+              key={item}
+              className={category === item ? "category-tab active" : "category-tab"}
+              aria-pressed={category === item}
+              onClick={() => selectCategory(item)}
             >
-              {fabricOptions.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label>
-            Dress type
-            <select
-              value={customDressType}
-              onChange={(e) => setCustomDressType(e.target.value)}
-            >
-              {dressTypes.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
+              {item === "All" ? "All clothing" : item === "Men" ? "Men's wear" : "Women's wear"}
+            </button>
+          ))}
         </div>
 
-        <div className="custom-order-footer">
-          <strong>Estimated sewing price: Rs. {customPrice.toLocaleString()}</strong>
-          <button
-            type="button"
-            className="primary-button"
-            onClick={handleCustomOrder}
-          >
-            Add custom sewing request
-          </button>
-        </div>
-      </div>
-
-      <div className="shop-banner">
-        <div>
-          <p className="eyebrow">READY TO WEAR</p>
-          <h2>{selectedTitle}</h2>
-        </div>
-        <p>
-          Choose your preferred fabric and dress type, then buy a finished piece
-          directly from the collection.
-        </p>
-      </div>
-
-      <div className="product-grid">
-        {filteredProducts.map((product) => (
-          <ProductCard
-            key={product.id}
-            product={product}
-            onAddToCart={onAddToCart}
+        <label className="search-field">
+          <span className="visually-hidden">Search clothing</span>
+          <input
+            type="search"
+            placeholder="Search styles..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
           />
-        ))}
+        </label>
       </div>
 
-      {filteredProducts.length === 0 && (
-        <p>No matching dress styles found. Try another fabric or dress type.</p>
+      <div className="shop-results-heading">
+        <h2>{category === "All" ? "All clothing" : `${category}'s wear`}</h2>
+        <span>{filteredProducts.length} styles</span>
+      </div>
+
+      {filteredProducts.length > 0 ? (
+        <div className="product-grid">
+          {filteredProducts.map((product) => (
+            <ProductCard key={product.id} product={product} />
+          ))}
+        </div>
+      ) : (
+        <p className="empty-results">No matching styles. Try another search.</p>
       )}
     </main>
   );
