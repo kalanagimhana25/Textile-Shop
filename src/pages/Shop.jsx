@@ -1,37 +1,68 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import ProductCard from "../components/ProductCard";
+import { getProductSizes, getVariantStock } from "../data/product";
 
 const categories = ["All", "Men", "Women"];
 
-export default function Shop({ products = [] }) {
+export default function Shop({
+  products = [],
+  favorites = [],
+  onToggleFavorite,
+}) {
   const [search, setSearch] = useState("");
+  const [sortOrder, setSortOrder] = useState("featured");
+  const [inStockOnly, setInStockOnly] = useState(false);
+  const [maxPrice, setMaxPrice] = useState("all");
   const [searchParams, setSearchParams] = useSearchParams();
   const category = categories.includes(searchParams.get("category"))
     ? searchParams.get("category")
     : "All";
+  const selectedType = searchParams.get("type") || "All";
+  const types = [...new Set(products.map((product) => product.type?.trim()).filter(Boolean))]
+    .sort((first, second) => first.localeCompare(second));
 
   const filteredProducts = useMemo(() => {
     const query = search.trim().toLowerCase();
 
-    return products.filter((product) => {
+    const filtered = products.filter((product) => {
       const matchesCategory = category === "All" || product.category === category;
+      const matchesType = selectedType === "All" || product.type?.toLowerCase() === selectedType.toLowerCase();
+      const matchesPrice = maxPrice === "all" || Number(product.price) <= Number(maxPrice);
+      const hasStock = (product.colors || [product.color || "Default"]).some((color) =>
+        (product.sizes || getProductSizes(product.type))
+          .some((size) => getVariantStock(product, color, size) > 0)
+      );
       const matchesSearch =
         !query ||
         [product.name, product.category, product.type, product.color]
           .filter(Boolean)
           .some((value) => value.toLowerCase().includes(query));
 
-      return matchesCategory && matchesSearch;
+      return matchesCategory && matchesType && matchesSearch &&
+        matchesPrice && (!inStockOnly || hasStock);
     });
-  }, [category, products, search]);
+
+    return filtered.sort((first, second) => {
+      if (sortOrder === "price-low") return Number(first.price) - Number(second.price);
+      if (sortOrder === "price-high") return Number(second.price) - Number(first.price);
+      if (sortOrder === "name") return first.name.localeCompare(second.name);
+      return 0;
+    });
+  }, [category, inStockOnly, maxPrice, products, search, selectedType, sortOrder]);
 
   const selectCategory = (nextCategory) => {
-    if (nextCategory === "All") {
-      setSearchParams({});
-    } else {
-      setSearchParams({ category: nextCategory });
-    }
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextCategory === "All") nextParams.delete("category");
+    else nextParams.set("category", nextCategory);
+    setSearchParams(nextParams);
+  };
+
+  const selectType = (nextType) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextType === "All") nextParams.delete("type");
+    else nextParams.set("type", nextType);
+    setSearchParams(nextParams);
   };
 
   return (
@@ -68,15 +99,70 @@ export default function Shop({ products = [] }) {
         </label>
       </div>
 
+      <div className="type-filter" aria-label="Shop by clothing type">
+        <span>Shop by type</span>
+        <div className="type-filter-options">
+          {["All", ...types].map((type) => (
+            <button
+              type="button"
+              key={type}
+              className={selectedType.toLowerCase() === type.toLowerCase() ? "type-filter-option active" : "type-filter-option"}
+              aria-pressed={selectedType.toLowerCase() === type.toLowerCase()}
+              onClick={() => selectType(type)}
+            >
+              {type === "All" ? "All types" : type}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="shop-refinements">
+        <label>
+          Sort by
+          <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value)}>
+            <option value="featured">Featured</option>
+            <option value="price-low">Price: low to high</option>
+            <option value="price-high">Price: high to low</option>
+            <option value="name">Name</option>
+          </select>
+        </label>
+        <label>
+          Price
+          <select value={maxPrice} onChange={(event) => setMaxPrice(event.target.value)}>
+            <option value="all">Any price</option>
+            <option value="5000">Up to Rs. 5,000</option>
+            <option value="10000">Up to Rs. 10,000</option>
+            <option value="20000">Up to Rs. 20,000</option>
+          </select>
+        </label>
+        <label className="in-stock-filter">
+          <input
+            type="checkbox"
+            checked={inStockOnly}
+            onChange={(event) => setInStockOnly(event.target.checked)}
+          />
+          In stock only
+        </label>
+      </div>
+
       <div className="shop-results-heading">
-        <h2>{category === "All" ? "All clothing" : `${category}'s wear`}</h2>
+        <h2>
+          {selectedType !== "All"
+            ? selectedType
+            : category === "All" ? "All clothing" : `${category}'s wear`}
+        </h2>
         <span>{filteredProducts.length} styles</span>
       </div>
 
       {filteredProducts.length > 0 ? (
         <div className="product-grid">
           {filteredProducts.map((product) => (
-            <ProductCard key={product.id} product={product} />
+          <ProductCard
+            key={product.id}
+            product={product}
+            favorites={favorites}
+            onToggleFavorite={onToggleFavorite}
+          />
           ))}
         </div>
       ) : (

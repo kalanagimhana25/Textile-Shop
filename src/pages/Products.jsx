@@ -1,18 +1,39 @@
 import { useState } from "react";
-import { getVariantStock, normalizeProductInventory } from "../data/product";
+import { useSearchParams } from "react-router-dom";
+import {
+  getProductSizes,
+  getVariantStock,
+  normalizeProductInventory,
+  remapStockBySize,
+  standardSizes,
+} from "../data/product";
+import { getColorSwatch } from "../data/color";
 
-const sizes = ["Small", "Medium", "Large"];
+const commonTypes = [
+  "Frocks",
+  "Dresses",
+  "Pants",
+  "Trousers",
+  "T-shirts",
+  "Shirts",
+  "Tops",
+  "Skirts",
+  "Jackets",
+  "Shorts",
+];
 const colorOptions = [
   "Black", "Blue", "Brown", "Charcoal", "Cream", "Green", "Grey",
-  "Navy", "Olive", "Pink", "Red", "Sand", "Sage", "White", "Other",
+  "Navy", "Olive", "Pink", "Red", "Sand", "Sage", "White",
 ];
+const CUSTOM_COLOR = "__custom_color__";
 
-const createVariant = (color = "") => ({
+const createVariant = (color = "", sizes = standardSizes) => ({
   key: `${Date.now()}-${Math.random()}`,
   color,
+  swatch: getColorSwatch(color),
   customColor: "",
   image: "",
-  stockBySize: { Small: "5", Medium: "5", Large: "5" },
+  stockBySize: Object.fromEntries(sizes.map((size) => [size, "5"])),
 });
 
 const createDefaultForm = () => ({
@@ -25,6 +46,37 @@ const createDefaultForm = () => ({
   description: "",
   variants: [createVariant()],
 });
+
+const createProductForm = (product, knownColors = colorOptions) => {
+  const normalizedProduct = normalizeProductInventory(product);
+  const selectableColors = new Set(
+    [...knownColors, ...normalizedProduct.colors].map((color) => color.toLowerCase())
+  );
+  return {
+    name: normalizedProduct.name,
+    category: normalizedProduct.category,
+    type: normalizedProduct.type || "",
+    price: String(normalizedProduct.price),
+    material: normalizedProduct.material || "",
+    fit: normalizedProduct.fit || "",
+    description: normalizedProduct.description || "",
+    variants: normalizedProduct.colors.map((color) => ({
+      ...createVariant(
+        selectableColors.has(color.toLowerCase()) ? color : CUSTOM_COLOR,
+        normalizedProduct.sizes
+      ),
+      swatch: normalizedProduct.colorSwatches?.[color] || getColorSwatch(color),
+      customColor: selectableColors.has(color.toLowerCase()) ? "" : color,
+      image: normalizedProduct.colorImages?.[color] || "",
+      stockBySize: Object.fromEntries(
+        normalizedProduct.sizes.map((size) => [
+          size,
+          String(getVariantStock(normalizedProduct, color, size)),
+        ])
+      ),
+    })),
+  };
+};
 
 const resizeImage = (file) =>
   new Promise((resolve, reject) => {
@@ -64,21 +116,62 @@ export default function Products({
   onUpdateProduct,
   onDeleteProduct,
 }) {
-  const [form, setForm] = useState(createDefaultForm);
-  const [editingId, setEditingId] = useState(null);
+  const [searchParams] = useSearchParams();
+  const selectableColors = [...new Set(
+    [...colorOptions, ...products.flatMap((product) => product.colors || [product.color])]
+      .filter(Boolean)
+      .map((color) => color.trim())
+  )].sort((first, second) => first.localeCompare(second));
+  const initialEditProduct = products.find(
+    (product) => String(product.id) === searchParams.get("edit")
+  );
+  const [form, setForm] = useState(() =>
+    initialEditProduct ? createProductForm(initialEditProduct, selectableColors) : createDefaultForm()
+  );
+  const [editingId, setEditingId] = useState(initialEditProduct?.id ?? null);
+  const [isFormVisible, setIsFormVisible] = useState(true);
   const [formError, setFormError] = useState("");
   const [uploadingKeys, setUploadingKeys] = useState([]);
+  const [customType, setCustomType] = useState("");
+  const productTypes = [...new Set(
+    [...commonTypes, ...products.map((product) => product.type)]
+      .filter(Boolean)
+      .map((type) => type.trim())
+  )].sort((first, second) => first.localeCompare(second));
 
   const resetForm = () => {
     setForm(createDefaultForm());
     setEditingId(null);
     setFormError("");
     setUploadingKeys([]);
+    setCustomType("");
+    setIsFormVisible(false);
   };
 
   const handleChange = (event) => {
     const { name, value } = event.target;
     setForm((currentForm) => ({ ...currentForm, [name]: value }));
+  };
+
+  const handleTypeChange = (event) => {
+    const { value } = event.target;
+    const nextSizes = getProductSizes(value === "Other" ? "" : value);
+    setForm((currentForm) => {
+      const currentType = currentForm.type === "Other" ? customType : currentForm.type;
+      const currentSizes = getProductSizes(currentType);
+      return {
+        ...currentForm,
+        type: value,
+        variants: currentForm.variants.map((variant) => ({
+          ...variant,
+          stockBySize: Object.fromEntries(
+            Object.entries(remapStockBySize(variant.stockBySize, currentSizes, nextSizes))
+              .map(([size, stock]) => [size, String(stock)])
+          ),
+        })),
+      };
+    });
+    setCustomType("");
   };
 
   const updateVariant = (key, update) => {
@@ -93,6 +186,7 @@ export default function Products({
   const handleColorChange = (key, value) => {
     updateVariant(key, {
       color: value,
+      swatch: getColorSwatch(value),
       customColor: "",
       image: "",
     });
@@ -132,13 +226,19 @@ export default function Products({
     event.preventDefault();
     setFormError("");
 
+    const type = form.type === "Other" ? customType.trim() : form.type.trim();
+    const productSizes = getProductSizes(type);
     const variants = form.variants.map((variant) => ({
       ...variant,
-      color: variant.color === "Other" ? variant.customColor.trim() : variant.color,
+      color: variant.color === CUSTOM_COLOR ? variant.customColor.trim() : variant.color,
     }));
 
     if (!form.name.trim()) {
       setFormError("Enter a product name.");
+      return;
+    }
+    if (!type) {
+      setFormError("Choose a clothing type or enter a new one.");
       return;
     }
     if (variants.some((variant) => !variant.color)) {
@@ -162,11 +262,14 @@ export default function Products({
     const colorImages = Object.fromEntries(
       variants.map((variant) => [variant.color, variant.image])
     );
+    const colorSwatches = Object.fromEntries(
+      variants.map((variant) => [variant.color, variant.swatch])
+    );
     const stockByColorSize = Object.fromEntries(
       variants.map((variant) => [
         variant.color,
         Object.fromEntries(
-          sizes.map((size) => [
+          productSizes.map((size) => [
             size,
             Math.max(0, Number(variant.stockBySize[size]) || 0),
           ])
@@ -174,7 +277,7 @@ export default function Products({
       ])
     );
     const stockBySize = Object.fromEntries(
-      sizes.map((size) => [
+      productSizes.map((size) => [
         size,
         variants.reduce(
           (total, variant) => total + Number(variant.stockBySize[size] || 0),
@@ -185,7 +288,7 @@ export default function Products({
     const productData = {
       name: form.name.trim(),
       category: form.category,
-      type: form.type.trim(),
+      type,
       price: Number(form.price) || 0,
       stockByColorSize,
       stockBySize,
@@ -193,7 +296,8 @@ export default function Products({
       color: colors[0],
       colors,
       colorImages,
-      sizes,
+      colorSwatches,
+      sizes: productSizes,
       material: form.material.trim(),
       fit: form.fit.trim(),
       description: form.description.trim(),
@@ -209,34 +313,15 @@ export default function Products({
   };
 
   const handleEdit = (product) => {
-    const normalizedProduct = normalizeProductInventory(product);
     setEditingId(product.id);
-    setForm({
-      name: normalizedProduct.name,
-      category: normalizedProduct.category,
-      type: normalizedProduct.type || "",
-      price: String(normalizedProduct.price),
-      material: normalizedProduct.material || "",
-      fit: normalizedProduct.fit || "",
-      description: normalizedProduct.description || "",
-      variants: normalizedProduct.colors.map((color) => ({
-        ...createVariant(colorOptions.includes(color) ? color : "Other"),
-        customColor: colorOptions.includes(color) ? "" : color,
-        image: normalizedProduct.colorImages?.[color] || "",
-        stockBySize: Object.fromEntries(
-          sizes.map((size) => [
-            size,
-            String(getVariantStock(normalizedProduct, color, size)),
-          ])
-        ),
-      })),
-    });
+    setForm(createProductForm(product, selectableColors));
     setFormError("");
+    setIsFormVisible(true);
   };
 
   const inventoryRows = products.flatMap((product) =>
     (product.colors || [product.color || "Default"]).flatMap((color) =>
-      (product.sizes || sizes).map((size) => ({
+      (product.sizes || getProductSizes(product.type)).map((size) => ({
         product,
         color,
         size,
@@ -251,7 +336,17 @@ export default function Products({
       <p className="eyebrow">STORE MANAGEMENT</p>
       <h1>Manage clothing</h1>
 
-      <div className="admin-form-card">
+      {!isFormVisible && (
+        <button
+          type="button"
+          className="primary-button"
+          onClick={() => setIsFormVisible(true)}
+        >
+          Add clothing item
+        </button>
+      )}
+
+      {isFormVisible && <div className="admin-form-card">
         <h2>{editingId ? "Update item" : "Add clothing item"}</h2>
         <p className="muted">
           Add each color separately and upload a photo that shows that color.
@@ -277,7 +372,28 @@ export default function Products({
             </label>
             <label>
               Clothing type
-              <input name="type" value={form.type} onChange={handleChange} placeholder="e.g. Trousers, Dresses" required />
+              <select
+                name="type"
+                value={productTypes.includes(form.type) ? form.type : form.type ? "Other" : ""}
+                onChange={handleTypeChange}
+                required
+              >
+                <option value="" disabled>Choose a type</option>
+                {productTypes.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+                <option value="Other">Add a new type...</option>
+              </select>
+              {form.type === "Other" && (
+                <input
+                  value={customType}
+                  onChange={(event) => setCustomType(event.target.value)}
+                  placeholder="e.g. Jumpsuits"
+                  aria-label="New clothing type"
+                  required
+                />
+              )}
+              <small>Examples: frocks, pants, T-shirts, shirts, skirts, jackets.</small>
             </label>
             <label>
               Price (Rs.)
@@ -300,7 +416,10 @@ export default function Products({
                   className="table-action"
                   onClick={() => setForm((currentForm) => ({
                     ...currentForm,
-                    variants: [...currentForm.variants, createVariant()],
+                    variants: [
+                      ...currentForm.variants,
+                      createVariant("", getProductSizes(form.type === "Other" ? customType : form.type)),
+                    ],
                   }))}
                 >
                   Add another color
@@ -333,12 +452,21 @@ export default function Products({
                         required
                       >
                         <option value="" disabled>Choose a color</option>
-                        {colorOptions.map((color) => (
+                        {selectableColors.map((color) => (
                           <option key={color} value={color}>{color}</option>
                         ))}
+                        <option value={CUSTOM_COLOR}>Add a new color...</option>
                       </select>
                     </label>
-                    {variant.color === "Other" && (
+                    <label>
+                      Swatch shown to shoppers
+                      <input
+                        type="color"
+                        value={variant.swatch}
+                        onChange={(event) => updateVariant(variant.key, { swatch: event.target.value })}
+                      />
+                    </label>
+                    {variant.color === CUSTOM_COLOR && (
                       <label>
                         Color name
                         <input
@@ -350,7 +478,7 @@ export default function Products({
                       </label>
                     )}
                     <label className="photo-upload-field">
-                      Photo for {variant.color === "Other" ? (variant.customColor || "this color") : (variant.color || "this color")}
+                      Photo for {variant.color === CUSTOM_COLOR ? (variant.customColor || "this color") : (variant.color || "this color")}
                       <input
                         type="file"
                         accept="image/*"
@@ -362,14 +490,14 @@ export default function Products({
                       <img
                         className="variant-photo-preview"
                         src={variant.image}
-                        alt={`${variant.color === "Other" ? variant.customColor : variant.color} product preview`}
+                        alt={`${variant.color === CUSTOM_COLOR ? variant.customColor : variant.color} product preview`}
                       />
                     )}
                   </div>
 
                   <div className="variant-stock-row">
-                    <strong>{variant.color === "Other" ? (variant.customColor || "Color") : (variant.color || "Color")} stock</strong>
-                    {sizes.map((size) => (
+                    <strong>{variant.color === CUSTOM_COLOR ? (variant.customColor || "Color") : (variant.color || "Color")} stock</strong>
+                    {getProductSizes(form.type === "Other" ? customType : form.type).map((size) => (
                       <label key={`${variant.key}-${size}`}>
                         {size}
                         <input
@@ -413,7 +541,7 @@ export default function Products({
             )}
           </div>
         </form>
-      </div>
+      </div>}
 
       <section className="admin-panel product-list-panel">
         <h2>Current clothing collection</h2>

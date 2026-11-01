@@ -5,15 +5,38 @@ import { getVariantStock } from "../data/product";
 
 export default function AdminDashboard({ products = [], onDeleteProduct }) {
   const totalProducts = products.length;
+  const productRows = products.map((product) => {
+    const colors = product.colors?.length ? product.colors : [product.color || "Default"];
+    const sizes = product.sizes?.length ? product.sizes : ["Small", "Medium", "Large"];
+    const stock = colors.reduce(
+      (total, color) =>
+        total + sizes.reduce((colorTotal, size) => colorTotal + getVariantStock(product, color, size), 0),
+      0
+    );
 
-  const totalStock = products.reduce(
-    (total, product) => total + Number(product.stock || 0),
+    return {
+      product,
+      stock,
+      colors,
+      image: product.colorImages?.[colors[0]] || product.image,
+    };
+  });
+  const totalStock = productRows.reduce((total, row) => total + row.stock, 0);
+  const stockValue = productRows.reduce(
+    (total, row) => total + Number(row.product.price || 0) * row.stock,
     0
   );
-
-  const stockValue = products.reduce(
-    (total, product) => total + Number(product.price || 0) * Number(product.stock || 0),
-    0
+  const types = Object.values(productRows.reduce((grouped, row) => {
+    const type = row.product.type?.trim() || "Other";
+    const key = `${row.product.category || "Uncategorized"}-${type.toLowerCase()}`;
+    if (!grouped[key]) {
+      grouped[key] = { category: row.product.category || "Uncategorized", type, products: 0, stock: 0 };
+    }
+    grouped[key].products += 1;
+    grouped[key].stock += row.stock;
+    return grouped;
+  }, {})).sort((first, second) =>
+    first.category.localeCompare(second.category) || first.type.localeCompare(second.type)
   );
 
   const stats = [
@@ -33,18 +56,6 @@ export default function AdminDashboard({ products = [], onDeleteProduct }) {
       icon: CircleDollarSign,
     },
   ];
-
-  const inventoryRows = products.flatMap((product) =>
-    (product.colors || [product.color || "Default"]).flatMap((color) =>
-      (product.sizes || ["Small", "Medium", "Large"]).map((size) => ({
-        product,
-        color,
-        size,
-        stock: getVariantStock(product, color, size),
-        image: product.colorImages?.[color] || product.image,
-      }))
-    )
-  );
 
   return (
     <main className="section">
@@ -76,7 +87,32 @@ export default function AdminDashboard({ products = [], onDeleteProduct }) {
       </div>
 
       <section className="admin-panel">
-        <h2>Inventory Overview</h2>
+        <h2>Clothing types</h2>
+        {types.length > 0 ? (
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr><th>Department</th><th>Type</th><th>Products</th><th>Items in Stock</th></tr>
+              </thead>
+              <tbody>
+                {types.map((type) => (
+                  <tr key={`${type.category}-${type.type}`}>
+                    <td>{type.category}</td>
+                    <td>{type.type}</td>
+                    <td>{type.products}</td>
+                    <td>{type.stock}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="muted">No products have been added yet.</p>
+        )}
+      </section>
+
+      <section className="admin-panel">
+        <h2>Products and stock</h2>
 
         <div className="table-wrapper">
           <table>
@@ -86,36 +122,45 @@ export default function AdminDashboard({ products = [], onDeleteProduct }) {
                 <th>Department</th>
                 <th>Type</th>
                 <th>Price</th>
-                <th>Color</th>
-                <th>Size</th>
+                <th>Colors</th>
                 <th>Photo</th>
-                <th>Stock</th>
+                <th>Total Items</th>
                 <th>Actions</th>
               </tr>
             </thead>
 
             <tbody>
-              {inventoryRows.map(({ product, color, size, stock, image }) => (
-                <tr key={`${product.id}-${color}-${size}`}>
+              {productRows.map(({ product, stock, colors, image }) => (
+                <tr key={product.id}>
                   <td>{product.name}</td>
                   <td>{product.category}</td>
                   <td>{product.type || "-"}</td>
                   <td>Rs. {Number(product.price).toLocaleString()}</td>
-                  <td>{color}</td>
-                  <td>{size}</td>
-                  <td><img className="inventory-thumbnail" src={image} alt={`${product.name}, ${color}, ${size}`} /></td>
+                  <td>{colors.join(", ")}</td>
+                  <td><img className="inventory-thumbnail" src={image} alt={`${product.name}`} /></td>
                   <td>{stock}</td>
                   <td>
-                    <button
-                      type="button"
-                      className="table-action danger"
-                      onClick={() => onDeleteProduct && onDeleteProduct(product.id)}
-                    >
-                      Delete
-                    </button>
+                    <div className="inline-actions">
+                      <Link
+                        to={`/admin/products?edit=${encodeURIComponent(String(product.id))}`}
+                        className="table-action"
+                      >
+                        Edit / add color
+                      </Link>
+                      <button
+                        type="button"
+                        className="table-action danger"
+                        onClick={() => onDeleteProduct?.(product.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
+              {productRows.length === 0 && (
+                <tr><td colSpan="8">No products have been added yet.</td></tr>
+              )}
             </tbody>
           </table>
         </div>

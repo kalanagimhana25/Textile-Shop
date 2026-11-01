@@ -168,6 +168,38 @@ const catalogProducts = [
   },
 ];
 
+export const standardSizes = ["Small", "Medium", "Large"];
+export const waistSizes = ["28", "30", "32", "34", "36", "38"];
+
+export const getProductSizes = (type) =>
+  /^(pants|trousers)$/i.test(String(type || "").trim())
+    ? waistSizes
+    : standardSizes;
+
+export const remapStockBySize = (stockBySize, sourceSizes, targetSizes) => {
+  const remapped = Object.fromEntries(targetSizes.map((size) => [size, 0]));
+  const standardToWaist = { Small: "28", Medium: "32", Large: "36" };
+
+  sourceSizes.forEach((sourceSize, index) => {
+    let targetSize = targetSizes.includes(sourceSize) ? sourceSize : null;
+
+    if (!targetSize && targetSizes.some((size) => waistSizes.includes(size)) && standardToWaist[sourceSize]) {
+      targetSize = standardToWaist[sourceSize];
+    } else if (!targetSize && targetSizes.some((size) => standardSizes.includes(size)) && waistSizes.includes(sourceSize)) {
+      targetSize = Number(sourceSize) <= 30 ? "Small" : Number(sourceSize) <= 34 ? "Medium" : "Large";
+    } else if (!targetSize) {
+      const targetIndex = sourceSizes.length === 1
+        ? 0
+        : Math.round(index * (targetSizes.length - 1) / (sourceSizes.length - 1));
+      targetSize = targetSizes[targetIndex];
+    }
+
+    remapped[targetSize] += Math.max(0, Number(stockBySize?.[sourceSize]) || 0);
+  });
+
+  return remapped;
+};
+
 export const getVariantStock = (product, color, size) =>
   Number(
     product.stockByColorSize?.[color]?.[size] ??
@@ -180,11 +212,23 @@ export const normalizeProductInventory = (product) => {
   const colors = product.colors?.length
     ? product.colors
     : [product.color || "Default"];
-  const sizes = product.sizes?.length
-    ? product.sizes
-    : ["Small", "Medium", "Large"];
+  const sourceSizes = product.sizes?.length ? product.sizes : standardSizes;
+  const sizes = /^(pants|trousers)$/i.test(String(product.type || "").trim())
+    ? waistSizes
+    : sourceSizes;
 
+  const sourceStockBySize = sourceSizes.join("|") === sizes.join("|")
+    ? product.stockBySize
+    : remapStockBySize(product.stockBySize || {}, sourceSizes, sizes);
   let stockByColorSize = product.stockByColorSize;
+  if (stockByColorSize && sourceSizes.join("|") !== sizes.join("|")) {
+    stockByColorSize = Object.fromEntries(
+      colors.map((color) => [
+        color,
+        remapStockBySize(stockByColorSize[color] || {}, sourceSizes, sizes),
+      ])
+    );
+  }
 
   if (!stockByColorSize) {
     stockByColorSize = Object.fromEntries(
@@ -195,7 +239,7 @@ export const normalizeProductInventory = (product) => {
             const sizeStock = Math.max(
               0,
               Number(
-                product.stockBySize?.[size] ??
+                sourceStockBySize?.[size] ??
                   (Number(product.stock) || 0) / sizes.length
               )
             );
@@ -208,7 +252,7 @@ export const normalizeProductInventory = (product) => {
     );
   }
 
-  const stockBySize = Object.fromEntries(
+  const normalizedStockBySize = Object.fromEntries(
     sizes.map((size) => [
       size,
       colors.reduce(
@@ -224,8 +268,8 @@ export const normalizeProductInventory = (product) => {
     colors,
     sizes,
     stockByColorSize,
-    stockBySize,
-    stock: Object.values(stockBySize).reduce((total, count) => total + count, 0),
+    stockBySize: normalizedStockBySize,
+    stock: Object.values(normalizedStockBySize).reduce((total, count) => total + count, 0),
   };
 };
 

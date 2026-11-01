@@ -1,6 +1,6 @@
 
 import { useEffect, useState } from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 import Navbar from "./components/Navbar";
 import Home from "./pages/Home";
 import Shop from "./pages/Shop";
@@ -9,12 +9,23 @@ import Cart from "./pages/Cart";
 import AdminDashboard from "./pages/AdminDashboard";
 import Products from "./pages/Products";
 import Orders from "./pages/Orders";
+import Wishlist from "./pages/Wishlist";
 import {
   getVariantStock,
   normalizeProductInventory,
   products as defaultProducts,
 } from "./data/product";
 import "./index.css";
+
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+
+  return null;
+}
 
 const readStoredCart = () => {
   if (typeof window === "undefined") return [];
@@ -44,6 +55,16 @@ const readStoredCart = () => {
         quantity: Math.max(1, Number(item.quantity) || 1),
       };
     });
+  } catch {
+    return [];
+  }
+};
+
+const readStoredFavorites = () => {
+  if (typeof window === "undefined") return [];
+  try {
+    const savedFavorites = JSON.parse(window.localStorage.getItem("clothing-favorites-v1") || "[]");
+    return Array.isArray(savedFavorites) ? savedFavorites : [];
   } catch {
     return [];
   }
@@ -86,6 +107,7 @@ const readStoredProducts = () => {
 export default function App() {
   const [cart, setCart] = useState(readStoredCart);
   const [products, setProducts] = useState(readStoredProducts);
+  const [favorites, setFavorites] = useState(readStoredFavorites);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -98,6 +120,20 @@ export default function App() {
       window.localStorage.setItem("clothing-products-v2", JSON.stringify(products));
     }
   }, [products]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("clothing-favorites-v1", JSON.stringify(favorites));
+    }
+  }, [favorites]);
+
+  const toggleFavorite = (productId) => {
+    setFavorites((currentFavorites) =>
+      currentFavorites.some((id) => String(id) === String(productId))
+        ? currentFavorites.filter((id) => String(id) !== String(productId))
+        : [...currentFavorites, productId]
+    );
+  };
 
   const addProduct = (newProduct) => {
     setProducts((currentProducts) => {
@@ -126,9 +162,16 @@ export default function App() {
   };
 
   const deleteProduct = (productId) => {
-    setProducts((currentProducts) =>
-      currentProducts.filter((product) => product.id !== productId)
-    );
+    setProducts((currentProducts) => {
+      if (productId === undefined || productId === null) return currentProducts;
+
+      const productIndex = currentProducts.findIndex(
+        (product) => product.id === productId
+      );
+      if (productIndex === -1) return currentProducts;
+
+      return currentProducts.filter((_, index) => index !== productIndex);
+    });
   };
 
   const addToCart = (product) => {
@@ -201,14 +244,42 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <Navbar cartCount={cartItemCount} />
+      <ScrollToTop />
+      <Navbar cartCount={cartItemCount} favoriteCount={favorites.length} />
 
       <Routes>
-        <Route path="/" element={<Home products={products} />} />
-        <Route path="/shop" element={<Shop onAddToCart={addToCart} products={products} />} />
+        <Route path="/" element={<Home products={products} favorites={favorites} onToggleFavorite={toggleFavorite} />} />
+        <Route
+          path="/shop"
+          element={
+            <Shop
+              products={products}
+              favorites={favorites}
+              onToggleFavorite={toggleFavorite}
+            />
+          }
+        />
+        <Route
+          path="/favorites"
+          element={
+            <Wishlist
+              products={products}
+              favorites={favorites}
+              onToggleFavorite={toggleFavorite}
+            />
+          }
+        />
         <Route
           path="/product/:productId"
-          element={<ProductDetail products={products} cart={cart} onAddToCart={addToCart} />}
+          element={
+            <ProductDetail
+              products={products}
+              cart={cart}
+              favorites={favorites}
+              onToggleFavorite={toggleFavorite}
+              onAddToCart={addToCart}
+            />
+          }
         />
         <Route
           path="/cart"

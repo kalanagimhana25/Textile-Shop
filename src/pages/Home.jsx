@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import ProductCard from "../components/ProductCard";
 
-export default function Home({ products = [] }) {
+export default function Home({ products = [], favorites = [], onToggleFavorite }) {
   const featuredProducts = [
     ...products.filter((product) => product.category === "Men").slice(0, 2),
     ...products.filter((product) => product.category === "Women").slice(0, 2),
@@ -61,7 +61,12 @@ export default function Home({ products = [] }) {
 
         <div className="product-grid">
           {featuredProducts.map((product) => (
-            <ProductCard key={product.id} product={product} />
+            <ProductCard
+              key={product.id}
+              product={product}
+              favorites={favorites}
+              onToggleFavorite={onToggleFavorite}
+            />
           ))}
         </div>
       </section>
