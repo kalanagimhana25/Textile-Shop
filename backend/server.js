@@ -8,6 +8,7 @@ import authRoutes from "./routes/authRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
 import departmentRoutes from "./routes/departmentRoutes.js";
 import healthRoutes from "./routes/healthRoutes.js";
+import orderRoutes from "./routes/orderRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 
 const app = express();
@@ -40,6 +41,7 @@ app.get("/", (_request, response) => {
 app.use("/api/health", healthRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/products", productRoutes);
+app.use("/api/orders", orderRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/departments", departmentRoutes);
 app.use(notFoundHandler);

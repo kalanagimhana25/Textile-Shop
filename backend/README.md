@@ -51,6 +51,17 @@ Create the initial admin manually, only once:
 
 The script uses a database transaction and a one-time database lock, and refuses to run if an administrator already exists or if the requested email already belongs to an account. It is not run by the API server. Public registration cannot create admins. Admin accounts should be created through a controlled operator process; do not expose this bootstrap script or its variables to public requests.
 
+## Orders and checkout
+
+All order routes require a bearer token. Customers can place orders and access only their own order history; administrators can list and inspect all orders and update their status.
+
+- `POST /api/orders` — place an order as a customer. Send an `Idempotency-Key` header and items containing only `productId`, `color`, `size`, and `quantity`, plus `phone` and `deliveryAddress`.
+- `GET /api/orders/mine` and `GET /api/orders/mine/:id` — list or retrieve the signed-in customer's orders.
+- `GET /api/orders/admin` and `GET /api/orders/admin/:id` — administrator-only order list and details.
+- `PATCH /api/orders/admin/:id/status` — administrator-only status update with `{ "status": "Confirmed" }` (or another valid next status).
+
+The backend reads each product's current price and stock, applies the existing Rs. 250 delivery charge, and saves price and product details as order snapshots. It reserves stock within a MongoDB transaction when supported; the order-placement fallback uses conditional stock updates and rolls them back if order creation fails. Cancelling an order restores its stock transactionally, so safe cancellation requires transaction support. The status flow is Pending → Confirmed → Processing → Shipped → Delivered; eligible earlier statuses may be cancelled. Payments are not collected or represented as paid.
+
 ## Render deployment
 
 - Create a Web Service using this repository.
