@@ -3,23 +3,27 @@ import { useSearchParams } from "react-router-dom";
 import ProductCard from "../components/ProductCard";
 import { getProductSizes, getVariantStock } from "../data/product";
 
-const categories = ["All", "Men", "Women"];
-
 export default function Shop({
   products = [],
+  categories = [],
+  departments = [],
   favorites = [],
   onToggleFavorite,
+  loading = false,
+  error = "",
+  onRetry,
 }) {
+  const departmentNames = departments.map((department) => department.name);
   const [search, setSearch] = useState("");
   const [sortOrder, setSortOrder] = useState("featured");
   const [inStockOnly, setInStockOnly] = useState(false);
   const [maxPrice, setMaxPrice] = useState("all");
   const [searchParams, setSearchParams] = useSearchParams();
-  const category = categories.includes(searchParams.get("category"))
+  const category = ["All", ...departmentNames].includes(searchParams.get("category"))
     ? searchParams.get("category")
     : "All";
   const selectedType = searchParams.get("type") || "All";
-  const types = [...new Set(products.map((product) => product.type?.trim()).filter(Boolean))]
+  const types = [...new Set(categories.map((item) => item.name?.trim()).filter(Boolean))]
     .sort((first, second) => first.localeCompare(second));
 
   const filteredProducts = useMemo(() => {
@@ -75,7 +79,7 @@ export default function Shop({
 
       <div className="shop-toolbar">
         <div className="category-tabs" aria-label="Shop by category">
-          {categories.map((item) => (
+          {["All", ...departmentNames].map((item) => (
             <button
               type="button"
               key={item}
@@ -83,7 +87,7 @@ export default function Shop({
               aria-pressed={category === item}
               onClick={() => selectCategory(item)}
             >
-              {item === "All" ? "All clothing" : item === "Men" ? "Men's wear" : "Women's wear"}
+              {item === "All" ? "All clothing" : `${item}'s wear`}
             </button>
           ))}
         </div>
@@ -154,7 +158,14 @@ export default function Shop({
         <span>{filteredProducts.length} styles</span>
       </div>
 
-      {filteredProducts.length > 0 ? (
+      {loading ? (
+        <p className="muted catalog-message" role="status">Loading products...</p>
+      ) : error ? (
+        <div className="catalog-message" role="alert">
+          <p>{error}</p>
+          <button type="button" className="table-action" onClick={onRetry}>Try again</button>
+        </div>
+      ) : filteredProducts.length > 0 ? (
         <div className="product-grid">
           {filteredProducts.map((product) => (
           <ProductCard

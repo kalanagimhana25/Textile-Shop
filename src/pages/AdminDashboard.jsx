@@ -3,7 +3,13 @@ import { Link } from "react-router-dom";
 import { Package, Boxes, CircleDollarSign, Plus } from "lucide-react";
 import { getVariantStock } from "../data/product";
 
-export default function AdminDashboard({ products = [], onDeleteProduct }) {
+export default function AdminDashboard({
+  products = [],
+  loading = false,
+  error = "",
+  adminError = "",
+  onDeleteProduct,
+}) {
   const totalProducts = products.length;
   const productRows = products.map((product) => {
     const colors = product.colors?.length ? product.colors : [product.color || "Default"];
@@ -64,6 +70,9 @@ export default function AdminDashboard({ products = [], onDeleteProduct }) {
       <p className="muted">
         Your clothing store at a glance.
       </p>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      {adminError && <p className="form-error" role="alert">{adminError}</p>}
+      {loading && <p className="muted" role="status">Loading products...</p>}
 
       <div className="stats-grid">
         {stats.map((stat) => {

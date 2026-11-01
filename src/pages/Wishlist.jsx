@@ -5,6 +5,8 @@ export default function Wishlist({
   products = [],
   favorites = [],
   onToggleFavorite,
+  loading = false,
+  error = "",
 }) {
   const favoriteProducts = products.filter((product) =>
     favorites.some((id) => String(id) === String(product.id))
@@ -14,7 +16,11 @@ export default function Wishlist({
     <main className="section shop-page">
       <p className="eyebrow">YOUR SAVED STYLES</p>
       <h1>Favorites</h1>
-      {favoriteProducts.length > 0 ? (
+      {loading ? (
+        <p className="muted" role="status">Loading your saved styles...</p>
+      ) : error ? (
+        <p className="catalog-message" role="alert">{error}</p>
+      ) : favoriteProducts.length > 0 ? (
         <div className="product-grid">
           {favoriteProducts.map((product) => (
             <ProductCard

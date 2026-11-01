@@ -1,21 +1,41 @@
-
-import { useEffect, useState } from "react";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { BrowserRouter, Link, Route, Routes, useLocation } from "react-router-dom";
 import Navbar from "./components/Navbar";
-import Home from "./pages/Home";
-import Shop from "./pages/Shop";
-import ProductDetail from "./pages/ProductDetail";
-import Cart from "./pages/Cart";
+import { getVariantStock, products as legacyProducts } from "./data/product";
 import AdminDashboard from "./pages/AdminDashboard";
-import Products from "./pages/Products";
+import AuthPage from "./pages/AuthPage";
+import Cart from "./pages/Cart";
+import Home from "./pages/Home";
 import Orders from "./pages/Orders";
+import ProductDetail from "./pages/ProductDetail";
+import Products from "./pages/Products";
+import Shop from "./pages/Shop";
 import Wishlist from "./pages/Wishlist";
-import {
-  getVariantStock,
-  normalizeProductInventory,
-  products as defaultProducts,
-} from "./data/product";
+import { apiRequest, readStoredAuth, setUnauthorizedHandler, storeAuth } from "./services/api";
+import { mapApiProduct, toApiProduct } from "./services/catalog";
 import "./index.css";
+
+const CART_STORAGE_KEY = "clothing-cart-v2";
+const FAVORITES_STORAGE_KEY = "clothing-favorites-v1";
+
+function readStoredArray(key) {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(key) || "[]");
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+function readStoredCart() {
+  return readStoredArray(CART_STORAGE_KEY).map((item) => ({
+    ...item,
+    size: item.size || "Medium",
+    color: item.color || "Default",
+    cartId: item.cartId || `${item.id}-${item.color || "Default"}-${item.size || "Medium"}`,
+    quantity: Math.max(1, Number(item.quantity) || 1),
+  }));
+}
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -27,105 +47,162 @@ function ScrollToTop() {
   return null;
 }
 
-const readStoredCart = () => {
-  if (typeof window === "undefined") return [];
-
-  try {
-    const savedCart = window.localStorage.getItem("clothing-cart-v2");
-    if (!savedCart) return [];
-    const storedCart = JSON.parse(savedCart);
-    if (!Array.isArray(storedCart)) return [];
-
-    return storedCart.map((item) => {
-      const product = defaultProducts.find((entry) => entry.id === item.id);
-      const size = item.size || "Medium";
-      const color = item.color || product?.color || "Default";
-      const variantStock = Number(item.variantStock ?? (
-        product ? getVariantStock(product, color, size) : item.stock ?? 0
-      ));
-
-      return {
-        ...product,
-        ...item,
-        size,
-        color,
-        variantStock,
-        image: item.image || product?.colorImages?.[color] || product?.image || "",
-        cartId: item.cartId || `${item.id}-${color}-${size}`,
-        quantity: Math.max(1, Number(item.quantity) || 1),
-      };
-    });
-  } catch {
-    return [];
+function AdminOnly({ loading, user, children }) {
+  if (loading) {
+    return <main className="section"><p className="muted" role="status">Checking your account...</p></main>;
   }
-};
-
-const readStoredFavorites = () => {
-  if (typeof window === "undefined") return [];
-  try {
-    const savedFavorites = JSON.parse(window.localStorage.getItem("clothing-favorites-v1") || "[]");
-    return Array.isArray(savedFavorites) ? savedFavorites : [];
-  } catch {
-    return [];
+  if (user?.role !== "admin") {
+    return (
+      <main className="section">
+        <p className="eyebrow">ADMIN ACCESS</p>
+        <h1>Administrator access required</h1>
+        <p className="muted">Sign in with an administrator account to manage store products.</p>
+        <Link to="/login" className="primary-button">Sign in</Link>
+      </main>
+    );
   }
-};
 
-const readStoredProducts = () => {
-  if (typeof window === "undefined") return defaultProducts;
-
-  try {
-    const savedProducts = window.localStorage.getItem("clothing-products-v2");
-    if (!savedProducts) return defaultProducts;
-
-    const storedProducts = JSON.parse(savedProducts);
-    if (!Array.isArray(storedProducts)) return defaultProducts;
-
-    return storedProducts.map((product) => {
-      const defaultProduct = defaultProducts.find((item) => item.id === product.id);
-      const savedColorImages = product.colorImages || {};
-      const colorImages = { ...defaultProduct?.colorImages, ...savedColorImages };
-
-      if (colorImages.Olive === "https://images.unsplash.com/photo-1506629905607-d9c297d7d4be?w=900") {
-        colorImages.Olive = defaultProduct?.colorImages?.Olive || colorImages.Olive;
-      }
-      if (colorImages.Black === "https://images.unsplash.com/photo-1564257577-6a5a9c5e1ba3?w=900") {
-        colorImages.Black = defaultProduct?.colorImages?.Black || colorImages.Black;
-      }
-
-      return normalizeProductInventory({
-        ...defaultProduct,
-        ...product,
-        colors: product.colors?.length ? product.colors : [product.color || "Default"],
-        colorImages,
-      });
-    });
-  } catch {
-    return defaultProducts;
-  }
-};
+  return children;
+}
 
 export default function App() {
   const [cart, setCart] = useState(readStoredCart);
-  const [products, setProducts] = useState(readStoredProducts);
-  const [favorites, setFavorites] = useState(readStoredFavorites);
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [departments, setDepartments] = useState([]);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState("");
+  const [favorites, setFavorites] = useState(() => readStoredArray(FAVORITES_STORAGE_KEY));
+  const [authToken, setAuthToken] = useState(() => readStoredAuth()?.token || "");
+  const [authUser, setAuthUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(Boolean(readStoredAuth()?.token));
+  const [adminError, setAdminError] = useState("");
+
+  const loadCatalog = useCallback(async () => {
+    setCatalogLoading(true);
+    setCatalogError("");
+    try {
+      const [productResponse, categoryResponse, departmentResponse] = await Promise.all([
+        apiRequest("/products"),
+        apiRequest("/categories"),
+        apiRequest("/departments"),
+      ]);
+      const nextProducts = (productResponse.data?.products || []).map(mapApiProduct);
+      const nextCategories = categoryResponse.data?.categories || [];
+      const nextDepartments = departmentResponse.data?.departments || [];
+      setProducts(nextProducts);
+      setCategories(nextCategories);
+      setDepartments(nextDepartments);
+
+      const productsByName = new Map(
+        nextProducts.map((product) => [product.name.trim().toLowerCase(), product])
+      );
+      const legacyNameById = new Map(
+        legacyProducts.map((product) => [String(product.id), product.name.trim().toLowerCase()])
+      );
+      const resolveProduct = (id, name) =>
+        productsByName.get(String(name || legacyNameById.get(String(id)) || "").trim().toLowerCase());
+
+      setCart((currentCart) => currentCart.map((item) => {
+        const product = resolveProduct(item.id, item.name);
+        if (!product) return item;
+        const variantStock = getVariantStock(product, item.color, item.size);
+        return {
+          ...item,
+          ...product,
+          id: product.id,
+          image: product.colorImages?.[item.color] || item.image || product.image,
+          variantStock,
+          quantity: Math.min(item.quantity, variantStock),
+          cartId: `${product.id}-${item.color}-${item.size}`,
+        };
+      }).filter((item) => item.quantity > 0));
+
+      setFavorites((currentFavorites) =>
+        [...new Set(currentFavorites.map((id) => {
+          const legacyProduct = legacyProducts.find((product) => String(product.id) === String(id));
+          return legacyProduct
+            ? productsByName.get(legacyProduct.name.trim().toLowerCase())?.id || id
+            : id;
+        }))]
+      );
+    } catch (error) {
+      setCatalogError(error.message || "Products could not be loaded. Please try again.");
+    } finally {
+      setCatalogLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("clothing-cart-v2", JSON.stringify(cart));
-    }
+    const timer = window.setTimeout(() => {
+      void loadCatalog();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadCatalog]);
+
+  useEffect(() => {
+    window.localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
   }, [cart]);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("clothing-products-v2", JSON.stringify(products));
-    }
-  }, [products]);
+    window.localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favorites));
+  }, [favorites]);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("clothing-favorites-v1", JSON.stringify(favorites));
+    setUnauthorizedHandler(() => {
+      setAuthToken("");
+      setAuthUser(null);
+      setAuthLoading(false);
+    });
+
+    const savedAuth = readStoredAuth();
+    if (!savedAuth?.token) {
+      return () => setUnauthorizedHandler(null);
     }
-  }, [favorites]);
+
+    let active = true;
+    apiRequest("/auth/me", { token: savedAuth.token })
+      .then((response) => {
+        if (!active) return;
+        setAuthToken(savedAuth.token);
+        setAuthUser(response.data?.user || null);
+      })
+      .catch(() => {
+        if (!active) return;
+        storeAuth(null);
+        setAuthToken("");
+        setAuthUser(null);
+      })
+      .finally(() => {
+        if (active) setAuthLoading(false);
+      });
+
+    return () => {
+      active = false;
+      setUnauthorizedHandler(null);
+    };
+  }, []);
+
+  const login = async (credentials) => {
+    const response = await apiRequest("/auth/login", { method: "POST", body: credentials });
+    const auth = {
+      token: response.data.token,
+      user: response.data.user,
+    };
+    storeAuth(auth);
+    setAuthToken(auth.token);
+    setAuthUser(auth.user);
+  };
+
+  const register = async (details) => {
+    await apiRequest("/auth/register", { method: "POST", body: details });
+  };
+
+  const logout = () => {
+    storeAuth(null);
+    setAuthToken("");
+    setAuthUser(null);
+  };
 
   const toggleFavorite = (productId) => {
     setFavorites((currentFavorites) =>
@@ -135,43 +212,35 @@ export default function App() {
     );
   };
 
-  const addProduct = (newProduct) => {
-    setProducts((currentProducts) => {
-      const normalizedProduct = {
-        ...newProduct,
-        id: newProduct.id ?? Date.now(),
-        price: Number(newProduct.price) || 0,
-      };
-
-      return [...currentProducts, normalizeProductInventory(normalizedProduct)];
-    });
+  const addProduct = async (productData) => {
+    setAdminError("");
+    const body = toApiProduct(productData, categories, departments);
+    const response = await apiRequest("/products", { method: "POST", body, token: authToken });
+    const product = mapApiProduct(response.data.product);
+    setProducts((current) => [...current, product]);
   };
 
-  const updateProduct = (productId, updatedProduct) => {
-    setProducts((currentProducts) =>
-      currentProducts.map((product) => {
-        if (product.id !== productId) return product;
-
-        return normalizeProductInventory({
-              ...product,
-              ...updatedProduct,
-              price: Number(updatedProduct.price) || 0,
-        });
-      })
-    );
+  const updateProduct = async (productId, productData) => {
+    setAdminError("");
+    const body = toApiProduct(productData, categories, departments);
+    const response = await apiRequest(`/products/${encodeURIComponent(productId)}`, {
+      method: "PUT",
+      body,
+      token: authToken,
+    });
+    const product = mapApiProduct(response.data.product);
+    setProducts((current) => current.map((item) => item.id === product.id ? product : item));
   };
 
-  const deleteProduct = (productId) => {
-    setProducts((currentProducts) => {
-      if (productId === undefined || productId === null) return currentProducts;
-
-      const productIndex = currentProducts.findIndex(
-        (product) => product.id === productId
-      );
-      if (productIndex === -1) return currentProducts;
-
-      return currentProducts.filter((_, index) => index !== productIndex);
+  const deleteProduct = async (productId) => {
+    setAdminError("");
+    await apiRequest(`/products/${encodeURIComponent(productId)}`, {
+      method: "DELETE",
+      token: authToken,
     });
+    setProducts((current) => current.filter((product) => product.id !== String(productId)));
+    setFavorites((current) => current.filter((id) => String(id) !== String(productId)));
+    setCart((current) => current.filter((item) => String(item.id) !== String(productId)));
   };
 
   const addToCart = (product) => {
@@ -179,18 +248,13 @@ export default function App() {
       const cartId = `${product.id}-${product.color}-${product.size}`;
       const currentProduct = products.find((item) => item.id === product.id) || product;
       const variantStock = getVariantStock(currentProduct, product.color, product.size);
-      const existingItem = currentCart.find((item) => (item.cartId || `${item.id}-${item.color}-${item.size}`) === cartId);
+      const existingItem = currentCart.find((item) => item.cartId === cartId);
 
-      if (variantStock < 1 || (existingItem?.quantity || 0) >= variantStock) {
-        return currentCart;
-      }
-
+      if (variantStock < 1 || (existingItem?.quantity || 0) >= variantStock) return currentCart;
       if (existingItem) {
-        return currentCart.map((item) =>
-          (item.cartId || `${item.id}-${item.color}-${item.size}`) === cartId
-            ? { ...item, variantStock, quantity: Math.min(item.quantity + 1, variantStock) }
-            : item
-        );
+        return currentCart.map((item) => item.cartId === cartId
+          ? { ...item, variantStock, quantity: Math.min(item.quantity + 1, variantStock) }
+          : item);
       }
 
       return [...currentCart, { ...product, variantStock, cartId, quantity: 1 }];
@@ -198,122 +262,94 @@ export default function App() {
   };
 
   const updateQuantity = (cartId, change) => {
-    setCart((currentCart) =>
-      currentCart
-        .map((item) => {
-          if ((item.cartId || `${item.id}-${item.color}-${item.size}`) !== cartId) {
-            return item;
-          }
-
-          const product = products.find((entry) => entry.id === item.id);
-          const variantStock = product
-            ? getVariantStock(product, item.color, item.size)
-            : Number(item.variantStock ?? item.stock ?? 0);
-
-          return {
-              ...item,
-              quantity: Math.min(item.quantity + change, variantStock),
-              variantStock,
-          };
-        })
-        .filter((item) => item.quantity > 0)
-    );
+    setCart((currentCart) => currentCart
+      .map((item) => {
+        if (item.cartId !== cartId) return item;
+        const product = products.find((entry) => entry.id === item.id);
+        const variantStock = product
+          ? getVariantStock(product, item.color, item.size)
+          : Number(item.variantStock ?? item.stock ?? 0);
+        return {
+          ...item,
+          quantity: Math.min(item.quantity + change, variantStock),
+          variantStock,
+        };
+      })
+      .filter((item) => item.quantity > 0));
   };
 
   const removeFromCart = (cartId) => {
-    setCart((currentCart) =>
-      currentCart.filter((item) => (item.cartId || `${item.id}-${item.color}-${item.size}`) !== cartId)
-    );
+    setCart((currentCart) => currentCart.filter((item) => item.cartId !== cartId));
   };
 
-  const cartItemCount = cart.reduce((total, item) => total + item.quantity, 0);
   const cartForDisplay = cart.map((item) => {
-    const product = products.find((entry) => entry.id === item.id);
+    const product = products.find((entry) => entry.id === String(item.id));
     const variantStock = product
       ? getVariantStock(product, item.color, item.size)
       : Number(item.variantStock ?? item.stock ?? 0);
-
     return { ...item, variantStock };
   });
-  const subtotal = cart.reduce(
-    (total, item) => total + item.price * item.quantity,
-    0
-  );
+  const cartItemCount = cart.reduce((total, item) => total + item.quantity, 0);
+  const subtotal = cart.reduce((total, item) => total + item.price * item.quantity, 0);
   const shipping = cart.length > 0 ? 250 : 0;
   const total = subtotal + shipping;
+  const handleDeleteProduct = async (productId) => {
+    try {
+      await deleteProduct(productId);
+    } catch (error) {
+      setAdminError(error.message || "The product could not be deleted.");
+    }
+  };
 
   return (
     <BrowserRouter>
       <ScrollToTop />
-      <Navbar cartCount={cartItemCount} favoriteCount={favorites.length} />
+      <Navbar
+        cartCount={cartItemCount}
+        favoriteCount={favorites.length}
+        user={authUser}
+        authLoading={authLoading}
+        onLogout={logout}
+      />
 
       <Routes>
-        <Route path="/" element={<Home products={products} favorites={favorites} onToggleFavorite={toggleFavorite} />} />
-        <Route
-          path="/shop"
-          element={
-            <Shop
-              products={products}
-              favorites={favorites}
-              onToggleFavorite={toggleFavorite}
-            />
-          }
-        />
-        <Route
-          path="/favorites"
-          element={
-            <Wishlist
-              products={products}
-              favorites={favorites}
-              onToggleFavorite={toggleFavorite}
-            />
-          }
-        />
-        <Route
-          path="/product/:productId"
-          element={
-            <ProductDetail
-              products={products}
-              cart={cart}
-              favorites={favorites}
-              onToggleFavorite={toggleFavorite}
-              onAddToCart={addToCart}
-            />
-          }
-        />
-        <Route
-          path="/cart"
-          element={
-            <Cart
-              cart={cartForDisplay}
-              onUpdateQuantity={updateQuantity}
-              onRemoveFromCart={removeFromCart}
-              subtotal={subtotal}
-              shipping={shipping}
-              total={total}
-            />
-          }
-        />
-        <Route
-          path="/admin"
-          element={
-            <AdminDashboard
-              products={products}
-              onDeleteProduct={deleteProduct}
-            />
-          }
-        />
-        <Route
-          path="/admin/products"
-          element={
-            <Products
-              products={products}
-              onAddProduct={addProduct}
-              onUpdateProduct={updateProduct}
-              onDeleteProduct={deleteProduct}
-            />
-          }
-        />
+        <Route path="/" element={
+          <Home products={products} departments={departments} favorites={favorites}
+            onToggleFavorite={toggleFavorite} loading={catalogLoading} error={catalogError}
+            onRetry={loadCatalog} />
+        } />
+        <Route path="/shop" element={
+          <Shop products={products} categories={categories} departments={departments}
+            favorites={favorites} onToggleFavorite={toggleFavorite}
+            loading={catalogLoading} error={catalogError} onRetry={loadCatalog} />
+        } />
+        <Route path="/favorites" element={
+          <Wishlist products={products} favorites={favorites} onToggleFavorite={toggleFavorite}
+            loading={catalogLoading} error={catalogError} />
+        } />
+        <Route path="/product/:productId" element={
+          <ProductDetail products={products} cart={cart} favorites={favorites}
+            onToggleFavorite={toggleFavorite} onAddToCart={addToCart} />
+        } />
+        <Route path="/cart" element={
+          <Cart cart={cartForDisplay} onUpdateQuantity={updateQuantity}
+            onRemoveFromCart={removeFromCart} subtotal={subtotal} shipping={shipping} total={total} />
+        } />
+        <Route path="/login" element={<AuthPage mode="login" onLogin={login} />} />
+        <Route path="/register" element={<AuthPage mode="register" onRegister={register} />} />
+        <Route path="/admin" element={
+          <AdminOnly loading={authLoading} user={authUser}>
+            <AdminDashboard products={products} loading={catalogLoading} error={catalogError}
+              adminError={adminError} onDeleteProduct={handleDeleteProduct} />
+          </AdminOnly>
+        } />
+        <Route path="/admin/products" element={
+          <AdminOnly loading={authLoading} user={authUser}>
+            <Products key={products.length} products={products} categories={categories} departments={departments}
+              loading={catalogLoading} catalogError={catalogError} adminError={adminError}
+              onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={handleDeleteProduct} />
+          </AdminOnly>
+        } />
         <Route path="/admin/orders" element={<Orders />} />
       </Routes>
 

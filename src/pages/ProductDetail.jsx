@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Heart, ShoppingBag, X } from "lucide-react";
 import ProductCard from "../components/ProductCard";
 import { getProductSizes, getVariantStock } from "../data/product";
 import { getColorSwatch } from "../data/color";
+import { apiRequest, getApiErrorMessage } from "../services/api";
+import { mapApiProduct } from "../services/catalog";
 
 export default function ProductDetail({
   products = [],
@@ -13,8 +15,48 @@ export default function ProductDetail({
   onAddToCart,
 }) {
   const { productId } = useParams();
-  const product = products.find((item) => String(item.id) === productId);
+  const [detailState, setDetailState] = useState(null);
 
+  useEffect(() => {
+    let active = true;
+    apiRequest(`/products/${encodeURIComponent(productId)}`)
+      .then((response) => {
+        const product = mapApiProduct(response.data.product);
+        if (active) setDetailState({ id: productId, loading: false, product, error: "" });
+      })
+      .catch((error) => {
+        if (active) {
+          setDetailState({
+            id: productId,
+            loading: false,
+            product: null,
+            error: getApiErrorMessage(error),
+          });
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [productId]);
+
+  const currentDetail = detailState?.id === productId ? detailState : null;
+  if (!currentDetail || currentDetail.loading) {
+    return <main className="section"><p className="muted" role="status">Loading product...</p></main>;
+  }
+
+  if (currentDetail.error) {
+    return (
+      <main className="section">
+        <p className="eyebrow">PRODUCT UNAVAILABLE</p>
+        <h1>We couldn't load this piece.</h1>
+        <p className="catalog-message" role="alert">{currentDetail.error}</p>
+        <Link to="/shop" className="primary-button">Back to the collection</Link>
+      </main>
+    );
+  }
+
+  const product = currentDetail.product;
   if (!product) {
     return (
       <main className="section">

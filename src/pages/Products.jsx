@@ -78,45 +78,18 @@ const createProductForm = (product, knownColors = colorOptions) => {
   };
 };
 
-const resizeImage = (file) =>
-  new Promise((resolve, reject) => {
-    const fileReader = new FileReader();
-    fileReader.onerror = () => reject(new Error("The selected photo could not be read."));
-    fileReader.onload = () => {
-      const image = new Image();
-      image.onerror = () => reject(new Error("The selected file is not a valid image."));
-      image.onload = () => {
-        const maxDimension = 1000;
-        const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
-        const canvas = document.createElement("canvas");
-        canvas.width = Math.round(image.width * scale);
-        canvas.height = Math.round(image.height * scale);
-        const context = canvas.getContext("2d");
-        if (!context) {
-          reject(new Error("Photo processing is not supported in this browser."));
-          return;
-        }
-
-        context.drawImage(image, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
-        if (dataUrl.length > 420_000) {
-          reject(new Error("This photo is still too large after compression. Please choose a smaller photo."));
-          return;
-        }
-        resolve(dataUrl);
-      };
-      image.src = String(fileReader.result);
-    };
-    fileReader.readAsDataURL(file);
-  });
-
 export default function Products({
   products = [],
+  categories = [],
+  departments = [],
+  loading = false,
+  catalogError = "",
+  adminError = "",
   onAddProduct,
   onUpdateProduct,
   onDeleteProduct,
 }) {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const selectableColors = [...new Set(
     [...colorOptions, ...products.flatMap((product) => product.colors || [product.color])]
       .filter(Boolean)
@@ -131,10 +104,16 @@ export default function Products({
   const [editingId, setEditingId] = useState(initialEditProduct?.id ?? null);
   const [isFormVisible, setIsFormVisible] = useState(true);
   const [formError, setFormError] = useState("");
-  const [uploadingKeys, setUploadingKeys] = useState([]);
+  const [isSaving, setIsSaving] = useState(false);
   const [customType, setCustomType] = useState("");
   const productTypes = [...new Set(
-    [...commonTypes, ...products.map((product) => product.type)]
+    [
+      ...commonTypes,
+      ...categories
+        .filter((category) => category.department?.name === form.category)
+        .map((category) => category.name),
+      ...products.map((product) => product.type),
+    ]
       .filter(Boolean)
       .map((type) => type.trim())
   )].sort((first, second) => first.localeCompare(second));
@@ -143,9 +122,13 @@ export default function Products({
     setForm(createDefaultForm());
     setEditingId(null);
     setFormError("");
-    setUploadingKeys([]);
     setCustomType("");
     setIsFormVisible(false);
+    if (searchParams.has("edit")) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete("edit");
+      setSearchParams(nextParams, { replace: true });
+    }
   };
 
   const handleChange = (event) => {
@@ -193,36 +176,7 @@ export default function Products({
     setFormError("");
   };
 
-  const handlePhotoUpload = async (key, file) => {
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setFormError("Choose an image file for this color.");
-      return;
-    }
-    if (file.size > 12 * 1024 * 1024) {
-      setFormError("Choose an image smaller than 12 MB.");
-      return;
-    }
-
-    const variant = form.variants.find((item) => item.key === key);
-    if (!variant?.color) {
-      setFormError("Select a color before uploading its photo.");
-      return;
-    }
-
-    setFormError("");
-    setUploadingKeys((currentKeys) => [...currentKeys, key]);
-    try {
-      const image = await resizeImage(file);
-      updateVariant(key, { image });
-    } catch (error) {
-      setFormError(error.message);
-    } finally {
-      setUploadingKeys((currentKeys) => currentKeys.filter((item) => item !== key));
-    }
-  };
-
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     setFormError("");
 
@@ -241,6 +195,10 @@ export default function Products({
       setFormError("Choose a clothing type or enter a new one.");
       return;
     }
+    if (!form.description.trim()) {
+      setFormError("Enter a product description.");
+      return;
+    }
     if (variants.some((variant) => !variant.color)) {
       setFormError("Select a color for every clothing variant.");
       return;
@@ -250,11 +208,7 @@ export default function Products({
       return;
     }
     if (variants.some((variant) => !variant.image)) {
-      setFormError("Upload a photo for every selected color before saving.");
-      return;
-    }
-    if (uploadingKeys.length > 0) {
-      setFormError("Wait for the color photos to finish uploading.");
+      setFormError("Enter an image URL for every color before saving.");
       return;
     }
 
@@ -304,12 +258,19 @@ export default function Products({
       image: colorImages[colors[0]],
     };
 
-    if (editingId) {
-      onUpdateProduct?.(editingId, productData);
-    } else {
-      onAddProduct?.({ ...productData, id: Date.now() });
+    setIsSaving(true);
+    try {
+      if (editingId) {
+        await onUpdateProduct?.(editingId, productData);
+      } else {
+        await onAddProduct?.(productData);
+      }
+      resetForm();
+    } catch (error) {
+      setFormError(error.message || "The product could not be saved.");
+    } finally {
+      setIsSaving(false);
     }
-    resetForm();
   };
 
   const handleEdit = (product) => {
@@ -335,6 +296,9 @@ export default function Products({
     <main className="section">
       <p className="eyebrow">STORE MANAGEMENT</p>
       <h1>Manage clothing</h1>
+      {catalogError && <p className="form-error" role="alert">{catalogError}</p>}
+      {adminError && <p className="form-error" role="alert">{adminError}</p>}
+      {loading && <p className="muted" role="status">Loading products and categories...</p>}
 
       {!isFormVisible && (
         <button
@@ -349,7 +313,7 @@ export default function Products({
       {isFormVisible && <div className="admin-form-card">
         <h2>{editingId ? "Update item" : "Add clothing item"}</h2>
         <p className="muted">
-          Add each color separately and upload a photo that shows that color.
+          Add each color separately and provide a hosted image URL for it.
         </p>
         <form onSubmit={handleSubmit} className="admin-form">
           <div className="admin-form-grid">
@@ -365,9 +329,10 @@ export default function Products({
             </label>
             <label>
               Department
-              <select name="category" value={form.category} onChange={handleChange}>
-                <option value="Men">Men&apos;s wear</option>
-                <option value="Women">Women&apos;s wear</option>
+              <select name="category" value={form.category} onChange={handleChange} required>
+                {departments.map((department) => (
+                  <option key={department._id} value={department.name}>{department.name}</option>
+                ))}
               </select>
             </label>
             <label>
@@ -478,13 +443,16 @@ export default function Products({
                       </label>
                     )}
                     <label className="photo-upload-field">
-                      Photo for {variant.color === CUSTOM_COLOR ? (variant.customColor || "this color") : (variant.color || "this color")}
+                      Image URL for {variant.color === CUSTOM_COLOR ? (variant.customColor || "this color") : (variant.color || "this color")}
                       <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(event) => handlePhotoUpload(variant.key, event.target.files?.[0])}
+                        type="url"
+                        value={variant.image}
+                        onChange={(event) => updateVariant(variant.key, { image: event.target.value })}
+                        placeholder="https://example.com/image.jpg"
+                        maxLength={2048}
+                        required
                       />
-                      <small>Required. The product photo must match this color.</small>
+                      <small>Use a hosted image URL that matches this color. Image uploads are not configured.</small>
                     </label>
                     {variant.image && (
                       <img
@@ -525,14 +493,10 @@ export default function Products({
             </label>
           </div>
 
-          {formError && <p className="form-error" role="alert">{formError}</p>}
+          {(formError || adminError) && <p className="form-error" role="alert">{formError || adminError}</p>}
           <div className="form-actions">
-            <button type="submit" className="primary-button" disabled={uploadingKeys.length > 0}>
-              {uploadingKeys.length > 0
-                ? "Processing photo..."
-                : editingId
-                  ? "Update item"
-                  : "Add item"}
+            <button type="submit" className="primary-button" disabled={isSaving || loading}>
+              {isSaving ? "Saving..." : editingId ? "Update item" : "Add item"}
             </button>
             {editingId && (
               <button type="button" className="secondary-button" onClick={resetForm}>
@@ -569,6 +533,9 @@ export default function Products({
                   </td>
                 </tr>
               ))}
+              {!loading && !catalogError && inventoryRows.length === 0 && (
+                <tr><td colSpan="9">No products are available.</td></tr>
+              )}
             </tbody>
           </table>
         </div>

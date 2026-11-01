@@ -35,8 +35,9 @@ img { display: block; max-width: 100%; }
 .brand { font-size: 22px; font-weight: 700; letter-spacing: 1.2px; white-space: nowrap; }
 .brand span { color: var(--accent); }
 .nav-links { display: flex; align-items: center; gap: 28px; }
-.nav-links a { display: flex; align-items: center; gap: 7px; color: #625f58; font-size: 13px; }
-.nav-links a.active, .nav-links a:hover { color: var(--accent); }
+.nav-links a, .nav-action { display: flex; align-items: center; gap: 7px; color: #625f58; font-size: 13px; }
+.nav-action { padding: 0; border: 0; background: transparent; cursor: pointer; }
+.nav-links a.active, .nav-links a:hover, .nav-action:hover { color: var(--accent); }
 .cart-badge {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 19px; height: 19px; padding: 0 5px; border-radius: 999px;
@@ -196,6 +197,12 @@ img { display: block; max-width: 100%; }
 .photo-upload-field small { color: var(--muted); font-size: 10px; line-height: 1.4; }
 .variant-photo-preview { width: 90px; height: 110px; object-fit: cover; background: #f0ede7; }
 .form-error { margin: 18px 0 0; color: #a03d35; font-size: 13px; }
+.catalog-message { padding: 18px 0; color: var(--muted); }
+.catalog-message[role="alert"] { color: #8a3d3d; }
+.auth-card { max-width: 520px; margin: 0 auto; }
+.auth-form { display: grid; gap: 16px; }
+.auth-switch { margin-top: 20px; }
+.auth-switch a { color: var(--accent); font-weight: 600; }
 .inventory-thumbnail { width: 42px; height: 50px; object-fit: cover; background: #f0ede7; }
 .admin-form input, .admin-form select, .admin-form textarea {
   width: 100%; min-height: 42px; padding: 10px 12px; border: 1px solid #dcd8d0; border-radius: 2px; background: white;
@@ -246,7 +253,9 @@ th { color: var(--muted); font-size: 11px; }
   .navbar { padding: 15px 5%; flex-wrap: wrap; }
   .nav-links { width: 100%; justify-content: space-between; gap: 8px; }
   .nav-links a { font-size: 11px; }
+  .nav-action { font-size: 11px; }
   .nav-links a svg { display: none; }
+  .nav-action svg { display: none; }
   .hero { min-height: 430px; padding: 55px 7%; background-position: 58% center; }
   .hero h1 { font-size: 48px; }
   .section { padding: 48px 5%; }
@@ -280,6 +289,7 @@ th { color: var(--muted); font-size: 11px; }
   .brand { font-size: 19px; }
   .nav-links { gap: 5px; }
   .nav-links a { font-size: 10px; }
+  .nav-action { font-size: 10px; }
   .product-grid { gap: 12px; }
   .product-card > a img { height: 205px; }
   .category-feature-grid { grid-template-columns: 1fr; }
