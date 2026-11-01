@@ -12,7 +12,11 @@ import orderRoutes from "./routes/orderRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 
 const app = express();
-const port = Number(process.env.PORT) || 5000;
+const configuredPort = process.env.PORT?.trim();
+const port = configuredPort ? Number(configuredPort) : 5000;
+if (!Number.isInteger(port) || port < 1 || port > 65535) {
+  throw new Error("PORT must be an integer between 1 and 65535.");
+}
 const allowedOrigins = new Set([
   "http://localhost:5173",
   ...(process.env.VERCEL_ORIGIN || "")
@@ -55,7 +59,10 @@ mongoose.connection.on("disconnected", () => {
   console.warn("MongoDB connection was lost.");
 });
 mongoose.connection.on("error", (error) => {
-  console.error(`MongoDB error: ${error.message}`);
+  console.error("MongoDB connection error.", {
+    name: error.name,
+    code: error.code,
+  });
 });
 
 void connectDatabase();
@@ -65,7 +72,10 @@ function shutDown(signal) {
   server.close(() => {
     void mongoose.disconnect()
       .catch((error) => {
-        console.error(`MongoDB shutdown failed: ${error.message}`);
+        console.error("MongoDB shutdown failed.", {
+          name: error.name,
+          code: error.code,
+        });
         process.exitCode = 1;
       })
       .finally(() => process.exit());

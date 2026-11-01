@@ -6,7 +6,7 @@ export async function connectDatabase() {
   const { MONGODB_URI } = process.env;
 
   if (!MONGODB_URI) {
-    console.warn("MONGODB_URI is not configured; starting API without a database connection.");
+    console.error("MONGODB_URI is not configured; database-backed API requests will be unavailable.");
     return false;
   }
 
@@ -16,7 +16,10 @@ export async function connectDatabase() {
     console.info("Connected to MongoDB.");
     return true;
   } catch (error) {
-    console.error(`MongoDB connection failed: ${error.message}`);
+    console.error("MongoDB connection failed.", {
+      name: error.name,
+      code: error.code,
+    });
     const delay = retryDelay;
     retryDelay = Math.min(retryDelay * 2, 60000);
     const retryTimer = setTimeout(() => {

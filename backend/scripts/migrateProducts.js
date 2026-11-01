@@ -180,7 +180,10 @@ async function migrateProducts() {
 try {
   await migrateProducts();
 } catch (error) {
-  console.error(`Product migration failed: ${error.message}`);
+  console.error("Product migration failed. Verify database connectivity and migration input.", {
+    name: error.name,
+    code: error.code,
+  });
   process.exitCode = 1;
 } finally {
   await mongoose.disconnect();

@@ -5,6 +5,7 @@ import { getVariantStock, products as legacyProducts } from "./data/product";
 import AdminDashboard from "./pages/AdminDashboard";
 import AuthPage from "./pages/AuthPage";
 import Cart from "./pages/Cart";
+import Checkout from "./pages/Checkout";
 import Home from "./pages/Home";
 import Orders from "./pages/Orders";
 import ProductDetail from "./pages/ProductDetail";
@@ -58,6 +59,28 @@ function AdminOnly({ loading, user, children }) {
         <h1>Administrator access required</h1>
         <p className="muted">Sign in with an administrator account to manage store products.</p>
         <Link to="/login" className="primary-button">Sign in</Link>
+      </main>
+    );
+  }
+
+  return children;
+}
+
+function CustomerOnly({ loading, user, returnTo, children }) {
+  if (loading) {
+    return <main className="section"><p className="muted" role="status">Checking your account...</p></main>;
+  }
+  if (user?.role !== "customer") {
+    return (
+      <main className="section">
+        <p className="eyebrow">CUSTOMER ACCOUNT</p>
+        <h1>{user ? "Customer checkout is unavailable" : "Sign in to continue"}</h1>
+        <p className="muted">
+          {user
+            ? "Order placement and personal order history are available to customer accounts."
+            : "Sign in with your customer account to place an order and view your order history."}
+        </p>
+        {!user && <Link to="/login" state={{ returnTo }} className="primary-button">Sign in</Link>}
       </main>
     );
   }
@@ -282,6 +305,10 @@ export default function App() {
     setCart((currentCart) => currentCart.filter((item) => item.cartId !== cartId));
   };
 
+  const clearCartAfterOrder = () => {
+    setCart([]);
+  };
+
   const cartForDisplay = cart.map((item) => {
     const product = products.find((entry) => entry.id === String(item.id));
     const variantStock = product
@@ -335,6 +362,17 @@ export default function App() {
           <Cart cart={cartForDisplay} onUpdateQuantity={updateQuantity}
             onRemoveFromCart={removeFromCart} subtotal={subtotal} shipping={shipping} total={total} />
         } />
+        <Route path="/checkout" element={
+          <CustomerOnly loading={authLoading} user={authUser} returnTo="/checkout">
+            <Checkout cart={cartForDisplay} user={authUser} token={authToken}
+              onOrderPlaced={clearCartAfterOrder} />
+          </CustomerOnly>
+        } />
+        <Route path="/orders" element={
+          <CustomerOnly loading={authLoading} user={authUser} returnTo="/orders">
+            <Orders />
+          </CustomerOnly>
+        } />
         <Route path="/login" element={<AuthPage mode="login" onLogin={login} />} />
         <Route path="/register" element={<AuthPage mode="register" onRegister={register} />} />
         <Route path="/admin" element={
@@ -350,7 +388,11 @@ export default function App() {
               onAddProduct={addProduct} onUpdateProduct={updateProduct} onDeleteProduct={handleDeleteProduct} />
           </AdminOnly>
         } />
-        <Route path="/admin/orders" element={<Orders />} />
+        <Route path="/admin/orders" element={
+          <AdminOnly loading={authLoading} user={authUser}>
+            <Orders admin />
+          </AdminOnly>
+        } />
       </Routes>
 
       <footer className="footer">

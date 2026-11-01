@@ -6,6 +6,11 @@ export function notFoundHandler(_request, response) {
 }
 
 export function errorHandler(error, _request, response, _next) {
+  if (response.headersSent) {
+    _next(error);
+    return;
+  }
+
   let statusCode = Number.isInteger(error.statusCode)
     ? error.statusCode
     : Number.isInteger(error.status) && error.status >= 400 && error.status < 500
@@ -25,7 +30,10 @@ export function errorHandler(error, _request, response, _next) {
   }
 
   if (statusCode >= 500) {
-    console.error(error.message);
+    console.error("Request failed.", {
+      name: error.name,
+      code: error.code,
+    });
   }
 
   response.status(statusCode).json({

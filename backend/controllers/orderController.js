@@ -280,6 +280,37 @@ async function findExistingOrder(userId, normalized) {
   return existing;
 }
 
+function getPagination(request) {
+  const page = request.query.page === undefined ? 1 : Number(request.query.page);
+  const limit = request.query.limit === undefined ? 20 : Number(request.query.limit);
+  if (!Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw requestError(400, "Page must be a positive integer and limit must be between 1 and 100.");
+  }
+  return { page, limit };
+}
+
+async function sendOrderPage(response, filter, page, limit) {
+  const [total, orders] = await Promise.all([
+    Order.countDocuments(filter),
+    Order.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit),
+  ]);
+  response.json({
+    status: "success",
+    data: {
+      orders,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    },
+  });
+}
+
 async function placeWithoutTransaction(normalized, user) {
   const existing = await findExistingOrder(user.id, normalized);
   if (existing) return { order: existing, duplicate: true };
@@ -355,11 +386,8 @@ export async function createOrder(request, response) {
 }
 
 export async function getCustomerOrders(request, response) {
-  const orders = await Order.find({ "customer.user": request.user.id }).sort({ createdAt: -1 });
-  response.json({
-    status: "success",
-    data: { orders },
-  });
+  const { page, limit } = getPagination(request);
+  await sendOrderPage(response, { "customer.user": request.user.id }, page, limit);
 }
 
 export async function getCustomerOrder(request, response) {
@@ -378,12 +406,9 @@ export async function getCustomerOrder(request, response) {
   });
 }
 
-export async function getAdminOrders(_request, response) {
-  const orders = await Order.find().sort({ createdAt: -1 });
-  response.json({
-    status: "success",
-    data: { orders },
-  });
+export async function getAdminOrders(request, response) {
+  const { page, limit } = getPagination(request);
+  await sendOrderPage(response, {}, page, limit);
 }
 
 export async function getAdminOrder(request, response) {

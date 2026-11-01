@@ -64,7 +64,10 @@ async function bootstrapAdmin() {
 try {
   await bootstrapAdmin();
 } catch (error) {
-  console.error(`Admin bootstrap failed: ${error.message}`);
+  console.error("Admin bootstrap failed. Verify the bootstrap settings and database connectivity.", {
+    name: error.name,
+    code: error.code,
+  });
   process.exitCode = 1;
 } finally {
   await mongoose.disconnect();

@@ -88,23 +88,24 @@ export default function Cart({
           <h2>Order Summary</h2>
 
           <div className="summary-row">
-            <span>Subtotal</span>
+            <span>Estimated subtotal</span>
             <span>Rs. {subtotal.toLocaleString()}</span>
           </div>
 
           <div className="summary-row">
-            <span>Shipping</span>
+            <span>Estimated delivery</span>
             <span>Rs. {shipping.toLocaleString()}</span>
           </div>
 
           <div className="summary-row total">
-            <span>Total</span>
+            <span>Estimated total</span>
             <span>Rs. {total.toLocaleString()}</span>
           </div>
 
-          <button type="button" className="checkout-button">
+          <p className="muted cart-price-note">Final prices and stock are verified by the store at checkout.</p>
+          <Link to="/checkout" className="checkout-button">
             Proceed to Checkout
-          </button>
+          </Link>
 
           <Link to="/shop" className="secondary-button">
             Continue Shopping

@@ -1,6 +1,6 @@
 
 import { Link } from "react-router-dom";
-import { Package, Boxes, CircleDollarSign, Plus } from "lucide-react";
+import { Package, Boxes, CircleDollarSign, Plus, ClipboardList } from "lucide-react";
 import { getVariantStock } from "../data/product";
 
 export default function AdminDashboard({
@@ -89,6 +89,10 @@ export default function AdminDashboard({
       </div>
 
       <div className="admin-actions">
+        <Link to="/admin/orders" className="secondary-button">
+          <ClipboardList size={16} />
+          Manage orders
+        </Link>
         <Link to="/admin/products" className="primary-button">
           <Plus size={16} />
           Manage products

@@ -25,6 +25,7 @@ export default function Navbar({
           Favorites
           {favoriteCount > 0 && <span className="cart-badge">{favoriteCount}</span>}
         </NavLink>
+        {user?.role === "customer" && <NavLink to="/orders">Orders</NavLink>}
         <NavLink to="/cart">
           <ShoppingBag size={18} />
           Cart

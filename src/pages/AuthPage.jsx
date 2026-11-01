@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 export default function AuthPage({ mode = "login", onLogin, onRegister }) {
   const isRegister = mode === "register";
   const navigate = useNavigate();
+  const location = useLocation();
   const [form, setForm] = useState({
     fullName: "",
     email: "",
@@ -54,10 +55,22 @@ export default function AuthPage({ mode = "login", onLogin, onRegister }) {
           password: form.password,
           confirmPassword: form.confirmPassword,
         });
-        navigate("/login", { replace: true, state: { message: "Account created. Please log in." } });
+        navigate("/login", {
+          replace: true,
+          state: {
+            message: "Account created. Please log in.",
+            returnTo: location.state?.returnTo,
+          },
+        });
       } else {
         await onLogin?.({ email: form.email.trim(), password: form.password });
-        navigate("/", { replace: true });
+        const returnTo = location.state?.returnTo;
+        navigate(
+          typeof returnTo === "string" && returnTo.startsWith("/") && !returnTo.startsWith("//")
+            ? returnTo
+            : "/",
+          { replace: true }
+        );
       }
     } catch (requestError) {
       setError(requestError.message || "We couldn't complete that request. Please try again.");
@@ -134,7 +147,7 @@ export default function AuthPage({ mode = "login", onLogin, onRegister }) {
         </form>
         <p className="muted auth-switch">
           {isRegister ? "Already have an account?" : "New to DAYFORM?"}{" "}
-          <Link to={isRegister ? "/login" : "/register"}>
+          <Link to={isRegister ? "/login" : "/register"} state={location.state}>
             {isRegister ? "Sign in" : "Create an account"}
           </Link>
         </p>
